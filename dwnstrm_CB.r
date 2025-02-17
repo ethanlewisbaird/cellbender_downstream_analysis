@@ -10,14 +10,12 @@ library(reticulate)
 args <- commandArgs(trailingOnly = TRUE)
 input_file <- args[1]
 output_dir <- args[2]
+sample_id <- args[3]
 
 # Create output directory if it doesn't exist
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
-
-# Set the output PDF file
-pdf(file.path(output_dir, "Rplots.pdf"))
 
 # Load CellBender output .h5 file and convert to seurat object
 Read_CellBender_h5_Mat <- function(
@@ -76,26 +74,27 @@ Read_CellBender_h5_Mat <- function(
 
 sparse.mat <- Read_CellBender_h5_Mat(input_file, use.names=TRUE, unique.features=TRUE)
 
-#clustering analysis
+# Clustering analysis
 obj <- CreateSeuratObject(counts = sparse.mat, min.cells = 3, min.features = 200)
-VlnPlot(obj, features = c("nFeature_RNA", "nCount_RNA"), ncol = 2)
+obj[["percent.mt"]] <- PercentageFeatureSet(obj, pattern = "^MT-")
+obj <- subset(obj, subset = nFeature_RNA > 200 & nFeature_RNA < 4000 & nCount_RNA < 45000 & percent.mt < 5)
+vln_plot <- VlnPlot(obj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+ggsave(filename = file.path(output_dir, paste0(sample_id, "_vln_plot.pdf")), plot = vln_plot)
+
 cbres <- NormalizeData(obj)
 cbres <- FindVariableFeatures(cbres, selection.method = "vst", nfeatures = 2000)
 cbres <- ScaleData(cbres)
-cbres <- FindVariableFeatures(cbres)
 cbres <- RunPCA(cbres)
-cbres <- FindNeighbors(cbres, dims = 1:10)
-cbres <- FindClusters(cbres, resolution = 0.5)
-cbres <- RunUMAP(cbres, dims = 1:9)
-DimPlot(cbres, reduction = "umap")
-#cbres <- FindNeighbors(cbres, k.param = 50)
-
 pca_plot <- DimPlot(cbres, reduction = "pca")
+ggsave(filename = file.path(output_dir, paste0(sample_id, "_pca_plot.pdf")), plot = pca_plot)
+
+ElbowPlot <- ElbowPlot(cbres)
+ggsave(filename = file.path(output_dir, paste0(sample_id, "_elbow_plot.pdf")), plot = ElbowPlot)
+cbres <- FindNeighbors(cbres, dims = 1:30)
+cbres <- FindClusters(cbres, resolution = 0.5)
+cbres <- RunUMAP(cbres, dims = 1:30)
 umap_plot <- DimPlot(cbres, reduction = "umap")
+ggsave(filename = file.path(output_dir, paste0(sample_id, "_umap_plot.pdf")), plot = umap_plot)
 
-# Print the plots
-print(pca_plot)
-print(umap_plot)
-
-# Close the PDF device
-dev.off()
+# Save the Seurat object
+#saveRDS(cbres, file.path(output_dir, paste0(sample_id, "_seurat_obj.rds")))
